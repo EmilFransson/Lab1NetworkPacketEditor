@@ -3,7 +3,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <net/ethernet.h>
+#include <netinet/ip.h>
 #include <arpa/inet.h>
+#include <netinet/udp.h>
+#include <netinet/tcp.h>
 #include <pcap.h>
 
 int menu();
@@ -44,16 +47,23 @@ int main()
         view(pcap, &pos, &nrOfPackets, header, packet);
         break;
 
+        case 9:
+        printf("Exiting program...\n");
+        break;
+
         default:
         printf("Unknown command.");
         getchar();
         break;
     }   
     }
-
+    if (pcap != NULL)
+    {
     pcap_close(pcap);
+    }
     return 0;
 }
+
 
 int menu()
 {
@@ -87,8 +97,6 @@ pcap_t* loadFile(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkt
             {
                 ++(*nrOfPackets);
             }
-            header = NULL;
-            packet = NULL;
             return pcap;
         }
         else    
@@ -165,7 +173,7 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
     if (pcap != NULL)
     {
         const struct ether_header* ethernetHeader;
-        
+        const struct iphdr* ipHeader;
 
         fseek(pcap_file(pcap), *pos, SEEK_SET);
         struct pcap_pkthdr header2;
@@ -184,8 +192,7 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
 
             ethernetHeader = (struct ether_header*)packet;
 
-
-            printf("---Ethernet layer---\n\n");
+            printf("\n---Ethernet layer---\n\n");
             printf("Destination MAC Adress: ");
             printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[0]);
             printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[1]);
@@ -206,12 +213,35 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
             if (ntohs(ethernetHeader->ether_type) == ETHERTYPE_IP)
             {
                 printf("0x0800 (IP)");
+                printf("\n\n---IP Layer---\n");
+                ipHeader = (struct iphdr*)(packet + sizeof(struct ether_header));
+
+                printf("\nIP-Version: %d", (unsigned int)ipHeader->version);
+                printf("\nIP Header Length: %d, (%d)", ((unsigned int)ipHeader->ihl * 32) / 8, (unsigned int)ipHeader->ihl); 
+                printf("\nType-Of-Service (tos): %d", (unsigned int)ipHeader->tos);
+                printf("\nIP-Length: %d", ntohs((unsigned int)ipHeader->tot_len));
+                printf("\nID: 0x%04x", ntohs((unsigned int)ipHeader->id));
+                printf("IP-flags: %x", ipHeader->frag_off)
+            }
+            else
+            {
+                printf("\nPacket not of ethertype IPV4; the following packet infomation will be disregarded.");
+                    
+                
             }
             printf("\n\n");
+            
+
             
 
         }
 
         getchar();
     }
+    else
+    {
+         fprintf(stderr, "Error; no file loaded");
+         getchar();
+    }
+    
 }
