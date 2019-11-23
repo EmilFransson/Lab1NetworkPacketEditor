@@ -4,7 +4,6 @@
 #include <string.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
-#include <arpa/inet.h>
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
 #include <pcap.h>
@@ -174,6 +173,7 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
     {
         const struct ether_header* ethernetHeader;
         const struct iphdr* ipHeader;
+        const struct udphdr* udpHeader;
 
         fseek(pcap_file(pcap), *pos, SEEK_SET);
         struct pcap_pkthdr header2;
@@ -191,37 +191,59 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
             i++;
 
             ethernetHeader = (struct ether_header*)packet;
+            u_char* charPtr = (u_char*)packet;
 
             printf("\n---Ethernet layer---\n\n");
             printf("Destination MAC Adress: ");
-            printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[0]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[1]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[2]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[3]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_dhost[4]);
-            printf("%02x", (unsigned int)ethernetHeader->ether_dhost[5]);
-            printf("\n");
-            printf("Source MAC Adress: ");
-            printf("%02x:", (unsigned int)ethernetHeader->ether_shost[0]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_shost[1]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_shost[2]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_shost[3]);
-            printf("%02x:", (unsigned int)ethernetHeader->ether_shost[4]);
-            printf("%02x", (unsigned int)ethernetHeader->ether_shost[5]);
-            printf("\n");
-            printf("Ethertype: ");
-            if (ntohs(ethernetHeader->ether_type) == ETHERTYPE_IP)
+            printf("%02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
+            charPtr += 6;
+            printf("\nSource MAC Adress: ");
+            printf("%02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
+            charPtr += 6;
+            unsigned short* shortPtr = (unsigned short*)charPtr;
+            printf("\nEthertype: ");
+            if (ntohs(*shortPtr) == 0x0800)
             {
                 printf("0x0800 (IP)");
                 printf("\n\n---IP Layer---\n");
                 ipHeader = (struct iphdr*)(packet + sizeof(struct ether_header));
-
-                printf("\nIP-Version: %d", (unsigned int)ipHeader->version);
-                printf("\nIP Header Length: %d, (%d)", ((unsigned int)ipHeader->ihl * 32) / 8, (unsigned int)ipHeader->ihl); 
-                printf("\nType-Of-Service (tos): %d", (unsigned int)ipHeader->tos);
-                printf("\nIP-Length: %d", ntohs((unsigned int)ipHeader->tot_len));
-                printf("\nID: 0x%04x", ntohs((unsigned int)ipHeader->id));
-                printf("IP-flags: %x", ipHeader->frag_off)
+                u_char* ptr = (u_char*)ipHeader;
+                printf("\nIP-Version: 4"); //Already determined by previous if-statement; no other versions allowed in assignment. 
+                printf("\nIP Header Length: 20"); //This is the length of IP-headers, so again, determined by previous if-statement. 
+                charPtr += 3;
+                printf("\nType-Of-Service (tos): %d", *charPtr);
+                charPtr += 1;
+                shortPtr = (unsigned short*)charPtr;
+                printf("\nIP-Length: %d", ntohs(*shortPtr));
+                shortPtr += 1;
+                printf("\nID: 0x%04x", ntohs(*shortPtr));
+                shortPtr += 1;
+                charPtr = (u_char*)shortPtr;
+                printf("\nFlag: 0x%02x%02x", *charPtr, *(charPtr+1));
+                printf("\nFragment Offset: %02x", *(charPtr+1));
+                charPtr += 2;
+                printf("\nTime-to-live (ttl): %d", *charPtr); 
+                charPtr += 1;
+                if(*charPtr == 17) //UDP
+                {
+                    printf("\nIP-Protocol: %d (UDP)", (unsigned int)ipHeader->protocol);
+                    printf("\n\n---UDP Layer---\n");
+                    printf("\nIP-source: ");
+                    ptr += 6;
+                    printf("%d.%d.%d.%d", *ptr, *(ptr+1), *(ptr+2), *(ptr+3));
+                    ptr += 4;
+                    printf("\nIP-destination: ");
+                    printf("%d.%d.%d.%d", *ptr, *(ptr+1), *(ptr+2), *(ptr+3));
+                    ptr += 4;
+                    unsigned short* sPtr = (unsigned short*)ptr; 
+                    printf("\nUDP Source Port: %d", ntohs(*sPtr));
+                    sPtr += 1;
+                    printf("\nUDP Destination Port: %d", ntohs(*sPtr));
+                    sPtr += 1;
+                    printf("\nLength: %d", ntohs(*sPtr));
+                    sPtr += 1;
+                    printf("\nChecksum: 0x%x", ntohs(*sPtr));
+                }
             }
             else
             {
