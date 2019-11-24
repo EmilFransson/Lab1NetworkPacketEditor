@@ -6,6 +6,8 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <pcap.h>
 
 int menu();
@@ -171,10 +173,6 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
 {
     if (pcap != NULL)
     {
-        const struct ether_header* ethernetHeader;
-        const struct iphdr* ipHeader;
-        const struct udphdr* udpHeader;
-
         fseek(pcap_file(pcap), *pos, SEEK_SET);
         struct pcap_pkthdr header2;
         int i = 1;
@@ -190,7 +188,6 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
             printf("\n");
             i++;
 
-            ethernetHeader = (struct ether_header*)packet;
             u_char* charPtr = (u_char*)packet;
 
             printf("\n---Ethernet layer---\n\n");
@@ -201,16 +198,18 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
             printf("%02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
             charPtr += 6;
             unsigned short* shortPtr = (unsigned short*)charPtr;
-            printf("\nEthertype: ");
             if (ntohs(*shortPtr) == 0x0800)
             {
-                printf("0x0800 (IP)");
+                printf("\nEthertype: 0x0800 (IP)");
                 printf("\n\n---IP Layer---\n");
-                ipHeader = (struct iphdr*)(packet + sizeof(struct ether_header));
-                u_char* ptr = (u_char*)ipHeader;
-                printf("\nIP-Version: 4"); //Already determined by previous if-statement; no other versions allowed in assignment. 
-                printf("\nIP Header Length: 20"); //This is the length of IP-headers, so again, determined by previous if-statement. 
-                charPtr += 3;
+                shortPtr += 1;
+                charPtr = (u_char*)shortPtr;
+                char ipVer = *charPtr >> 4;
+                printf("\nIP-Version: %d", ipVer); 
+                char headerLength = *charPtr << 4;
+                headerLength = headerLength >> 4;
+                printf("\nIP Header Length: %d", headerLength * 4); //Number of 32-bit words, so we multiply by 4 to get the bytes it surmount to. 
+                charPtr += 1;
                 printf("\nType-Of-Service (tos): %d", *charPtr);
                 charPtr += 1;
                 shortPtr = (unsigned short*)charPtr;
@@ -226,44 +225,106 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
                 charPtr += 1;
                 if(*charPtr == 17) //UDP
                 {
-                    printf("\nIP-Protocol: %d (UDP)", (unsigned int)ipHeader->protocol);
+                    printf("\nIP-Protocol: %d (UDP)", *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    charPtr = (u_char*)shortPtr;
                     printf("\n\n---UDP Layer---\n");
-                    printf("\nIP-source: ");
-                    ptr += 6;
-                    printf("%d.%d.%d.%d", *ptr, *(ptr+1), *(ptr+2), *(ptr+3));
-                    ptr += 4;
-                    printf("\nIP-destination: ");
-                    printf("%d.%d.%d.%d", *ptr, *(ptr+1), *(ptr+2), *(ptr+3));
-                    ptr += 4;
-                    unsigned short* sPtr = (unsigned short*)ptr; 
-                    printf("\nUDP Source Port: %d", ntohs(*sPtr));
-                    sPtr += 1;
-                    printf("\nUDP Destination Port: %d", ntohs(*sPtr));
-                    sPtr += 1;
-                    printf("\nLength: %d", ntohs(*sPtr));
-                    sPtr += 1;
-                    printf("\nChecksum: 0x%x", ntohs(*sPtr));
+                    printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+                    printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+                    shortPtr = (unsigned short*)charPtr; 
+                    printf("\nUDP Source Port: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nUDP Destination Port: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nLength: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nChecksum: 0x%x", ntohs(*shortPtr));
+                }
+                else if (*charPtr == 6) //TCP
+                {
+                    printf("\nIP-Protocol: %d (TCP)", *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    charPtr = (u_char*)shortPtr;
+                    printf("\n\n---TCP Layer---\n");
+                    printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+                    printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nTCP Source Port: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nTCP Destination Port: %d", ntohs(*shortPtr));
+                    shortPtr += 1;             
+                    unsigned int* intPtr = (unsigned int*)shortPtr;      
+                    printf("\nSequence Number: 0x%08x", ntohl(*intPtr));
+                    intPtr += 1;
+                    printf("\nAcknowledgement Number: 0x%08x", ntohl(*intPtr));
+                    intPtr += 1;
+                    charPtr = (u_char*)intPtr;
+                    char firstFourBits = *charPtr >> 4;
+                    printf("\nOffset: %d", (firstFourBits * 4)); //Number of 32-bit words, so we multiply by 4 to get the bytes it surmount to. 
+                    char lastFourBits = *charPtr << 4;
+                    lastFourBits = lastFourBits >> 4;
+                    printf("\nSize: %d", lastFourBits); //Should be 0.
+                    charPtr += 1;
+                    printf("\nFlag: 0x%03x", *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nWindow size: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nChecksum: 0x%04x", ntohs(*shortPtr));
+                }
+                else if (*charPtr == 1) // ICMP
+                {
+                    printf("\nIP-Protocol: %d (ICMP)", *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    charPtr = (u_char*)shortPtr;
+                    printf("\n\n---ICMP Layer---\n");
+                    printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+                    printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
+                    charPtr += 4;
+
+
+                }
+                else
+                {
+                    printf("Transport layer not of type TCP, UDP, or ICMP - the following packet information will be disregarded.");   
                 }
             }
             else
             {
                 printf("\nPacket not of ethertype IPV4; the following packet infomation will be disregarded.");
-                    
-                
             }
             printf("\n\n");
-            
-
-            
-
         }
-
+        printf("Press enter key to continue.");
         getchar();
-    }
+    }                
     else
     {
          fprintf(stderr, "Error; no file loaded");
          getchar();
     }
-    
 }
+                        
+                    
+                
+                    
+            
+
+            
+
+
+    
