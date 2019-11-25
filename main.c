@@ -10,6 +10,13 @@
 #include <arpa/inet.h>
 #include <pcap.h>
 
+typedef struct 
+    {
+        struct pcap_pkthdr* header;
+        uint8_t* packet;
+    } Packets;
+    Packets* packets = NULL;
+
 int menu();
 pcap_t* loadFile(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* header, const uint8_t* packet);
 uint32_t showNumberOfPackets(pcap_t* pcap, long* pos, struct pcap_pkthdr* header, const uint8_t* packet);
@@ -60,11 +67,16 @@ int main()
     }
     if (pcap != NULL)
     {
-    pcap_close(pcap);
+        pcap_close(pcap);
+        for (int i = 0; i < nrOfPackets; i++)
+        {
+            free(packets[i].header);
+            free(packets[i].packet);    
+        }
+        free(packets);
     }
     return 0;
 }
-
 
 int menu()
 {
@@ -87,22 +99,36 @@ pcap_t* loadFile(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkt
         fgets(fileName, capacity, stdin);
         fileName[strlen(fileName) -1] = '\0';
         pcap = pcap_open_offline(fileName, errorBuffer);
+
+        packets = calloc(0, sizeof(struct pcap_pkthdr*) + sizeof(uint8_t*));
         if (pcap != NULL)
         {
             printf("File '%s' opened successfully!", fileName);
-            *pos = ftell(pcap_file(pcap));
             getchar();
+            *pos = ftell(pcap_file(pcap));
 
             fseek(pcap_file(pcap), *pos, SEEK_SET);
             while (pcap_next_ex(pcap, &header, &packet) >= 0)
             {
                 ++(*nrOfPackets);
+                packets = realloc(packets, *nrOfPackets * sizeof(Packets));
+                packets[*nrOfPackets - 1].header = (struct pcap_pkthdr*)malloc(sizeof(struct pcap_pkthdr*));
+                packets[*nrOfPackets - 1].header->caplen = header->caplen;
+                packets[*nrOfPackets - 1].header->len = header->len;
+                packets[*nrOfPackets - 1].header->ts = header->ts;
+                
+                packets[*nrOfPackets - 1].packet = (uint8_t*)malloc(header->len);
+                for (int i = 0; i < (int)header->len; i++)
+                {
+                    packets[*nrOfPackets - 1].packet[i] = packet[i];
+                }
             }
             return pcap;
         }
         else    
         {
-            printf("\nERROR, file not loaded!");     
+            printf("\nERROR, file not loaded!");  
+            printf("\n%s", errorBuffer);   
             getchar();
             return NULL;  
         }
@@ -132,7 +158,8 @@ uint32_t showNumberOfPackets(pcap_t* pcap, long* pos, struct pcap_pkthdr* header
         }
     else
     {
-     fprintf(stderr, "Error; no file loaded");   
+     fprintf(stderr, "Error; no file loaded into memory.");
+     getchar();   
     }
 }
 
@@ -150,7 +177,7 @@ void listPackages(pcap_t* pcap, uint32_t* nrOfPackets)
      scanf("%d", &endIndex);
      getchar();
 
-     if (startIndex <= *nrOfPackets && startIndex > 0 && endIndex <= *nrOfPackets)
+     if (startIndex <= *nrOfPackets && startIndex > 0 && endIndex <= *nrOfPackets && endIndex >= startIndex)
      {
          for (int i = startIndex; i <= endIndex; i++)
          {
@@ -165,7 +192,11 @@ void listPackages(pcap_t* pcap, uint32_t* nrOfPackets)
              getchar();
          }
      }
-     
+    }
+    else
+    {
+        fprintf(stderr, "Error; no file loaded into memory.");
+        getchar();
     }
 }
 
@@ -173,29 +204,19 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
 {
     if (pcap != NULL)
     {
-        fseek(pcap_file(pcap), *pos, SEEK_SET);
-        struct pcap_pkthdr header2;
-        int i = 1;
-
-        while (pcap_next_ex(pcap, &header, &packet) >= 0)
+        for (int i = 0; i < *nrOfPackets; i++)
         {
-            header2.caplen = header->caplen;
-            header2.len = header->len;
-            printf("Packet %d:\n", i);
-            printf("Capture Length: %d", (int)header2.caplen);
-            printf("\n");
-            printf("Length: %d", header2.len);
-            printf("\n");
-            i++;
+            printf("Packet %d:", i + 1);
+            printf("\nCapture Length: %d", (int)packets[i].header->caplen);
+            printf("\nLength: %d", packets[i].header->len);
+            printf("\nCapture time: %f micro-seconds", (float)packets[i].header->ts.tv_usec);
 
-            u_char* charPtr = (u_char*)packet;
+            u_char* charPtr = (u_char*)packets[i].packet;
 
-            printf("\n---Ethernet layer---\n\n");
-            printf("Destination MAC Adress: ");
-            printf("%02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
+            printf("\n\n---Ethernet layer---\n\n");
+            printf("Destination MAC Adress: %02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
             charPtr += 6;
-            printf("\nSource MAC Adress: ");
-            printf("%02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
+            printf("\nSource MAC Adress: %02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3), *(charPtr+4), *(charPtr+5));
             charPtr += 6;
             unsigned short* shortPtr = (unsigned short*)charPtr;
             if (ntohs(*shortPtr) == 0x0800)
@@ -295,8 +316,16 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
                     charPtr += 4;
                     printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr+1), *(charPtr+2), *(charPtr+3));
                     charPtr += 4;
-
-
+                    printf("\nType: %d", *charPtr);
+                    charPtr += 1;
+                    printf("\nCode: %d", *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short*)charPtr;
+                    printf("\nChecksum: 0x%04x", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nID: 0x%04x", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nSequence Number: 0x%04x", ntohs(*shortPtr));
                 }
                 else
                 {
@@ -314,17 +343,7 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
     }                
     else
     {
-         fprintf(stderr, "Error; no file loaded");
+         fprintf(stderr, "Error; no file loaded into memory.");
          getchar();
     }
 }
-                        
-                    
-                
-                    
-            
-
-            
-
-
-    
