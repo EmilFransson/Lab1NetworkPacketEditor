@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
@@ -22,6 +24,7 @@ pcap_t* loadFile(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkt
 uint32_t showNumberOfPackets(pcap_t* pcap, long* pos, struct pcap_pkthdr* header, const uint8_t* packet);
 void listPackages(pcap_t* pcap, uint32_t* nrOfPackets);
 void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* header, const uint8_t* packet);
+void edit(uint32_t* nrOfPackets);
 
 int main()
 {
@@ -53,6 +56,10 @@ int main()
 
         case 4:
         view(pcap, &pos, &nrOfPackets, header, packet);
+        break;
+
+        case 5:
+        edit(&nrOfPackets);
         break;
 
         case 9:
@@ -173,9 +180,9 @@ void listPackages(pcap_t* pcap, uint32_t* nrOfPackets)
     printf("Please input the start-Id of the packet range to be listed, as a single digit: ");
     scanf("%d", &startIndex);
     getchar();
-     printf("\nPlease input the end-Id of the packet range to be listed, as a single digit: ");
-     scanf("%d", &endIndex);
-     getchar();
+    printf("\nPlease input the end-Id of the packet range to be listed, as a single digit: ");
+    scanf("%d", &endIndex);
+    getchar();
 
      if (startIndex <= *nrOfPackets && startIndex > 0 && endIndex <= *nrOfPackets && endIndex >= startIndex)
      {
@@ -231,12 +238,12 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
                 headerLength = headerLength >> 4;
                 printf("\nIP Header Length: %d", headerLength * 4); //Number of 32-bit words, so we multiply by 4 to get the bytes it surmount to. 
                 charPtr += 1;
-                printf("\nType-Of-Service (tos): %d", *charPtr);
+                printf("\nType-Of-Service (tos / DSCP|ECN): 0x%02x, (%d)", *charPtr, *charPtr);
                 charPtr += 1;
                 shortPtr = (unsigned short*)charPtr;
                 printf("\nIP-Length: %d", ntohs(*shortPtr));
                 shortPtr += 1;
-                printf("\nID: 0x%04x", ntohs(*shortPtr));
+                printf("\nID: 0x%04x, (%d)", ntohs(*shortPtr), ntohs(*shortPtr));
                 shortPtr += 1;
                 charPtr = (u_char*)shortPtr;
                 printf("\nFlag: 0x%02x%02x", *charPtr, *(charPtr+1));
@@ -345,5 +352,366 @@ void view(pcap_t* pcap, long* pos, uint32_t* nrOfPackets, struct pcap_pkthdr* he
     {
          fprintf(stderr, "Error; no file loaded into memory.");
          getchar();
+    }
+}
+
+void edit(uint32_t* nrOfPackets)
+{
+    if (*nrOfPackets > 0)
+    {
+        uint32_t packetChoice = -1;
+        printf("There are %d number of packets loaded into memory", *nrOfPackets);
+        printf("\nPlease input the number of the packet you would like to edit: ");
+        scanf("%d", &packetChoice);
+        getchar();
+        packetChoice--;
+        if (packetChoice >= 0 && packetChoice < *nrOfPackets)
+        {
+            printf("Capture length: ");
+            scanf("%d", &packets[packetChoice].header->caplen);
+            getchar();
+            printf("Total Length: ");
+            scanf("%d", &packets[packetChoice].header->len);
+            getchar();
+            printf("Capture time (in micro seconds): ");
+            scanf("%ld", &packets[packetChoice].header->ts.tv_usec);
+            getchar();
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            char macDest[18];
+            bool correctMAC = false;
+            while (strlen(macDest) != 17 || correctMAC == false)
+            {
+                printf("Destination MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
+                fgets(macDest, 18, stdin);
+                getchar();
+                for (int i = 0; i < 18; i++)
+                {
+                    if (macDest[i] == '\n')
+                    {
+                        macDest[i] = '\0';
+                    }
+                }
+                if (strlen(macDest) != 17)
+                {
+                    printf("Incorrect length, try again.\n");
+                    getchar();
+                }
+                else
+                {
+                    correctMAC = true;
+                    for (int i = 0; i < 5 && correctMAC == true; i++)
+                    {
+                        if (macDest[(i * 3) + 2] != ':')
+                        {
+                            correctMAC = false;
+                        }
+                    }
+                    for (int i = 0; i < 6 && correctMAC == true; i++)
+                    {
+                        if (macDest[i * 3] > 102 || (macDest[i * 3] > 0 && macDest[i * 3] < 48) 
+                        || (macDest[i * 3] > 70 && macDest[i * 3] < 97) || (macDest[i * 3] > 57 && macDest[i * 3] < 65))
+                        {
+                            correctMAC = false;
+                        }
+                        else if (macDest[(i * 3) + 1] > 102 || (macDest[(i * 3) + 1] > 0 && macDest[(i * 3) + 1] < 48) 
+                        || (macDest[(i * 3) + 1] > 70 && macDest[(i * 3) + 1] < 97) || (macDest[(i * 3) + 1] > 57 && macDest[(i * 3) + 1] < 65))
+                        {
+                            correctMAC = false;
+                        }
+                    }
+                    if (correctMAC == false)
+                    {
+                        printf("Incorrect input, please try again.\n");
+                    }
+                }
+           }
+            int macD[6];
+            sscanf(macDest, "%x:%x:%x:%x:%x:%x", &macD[0], &macD[1], &macD[2], &macD[3], &macD[4], &macD[5]);
+            char finalMacDest[6];
+            for (int i = 0; i < 6; i++)
+            {
+                finalMacDest[i] = macD[i];
+            }
+            u_char* charPtr = (u_char*)packets[packetChoice].packet;
+            for (int i = 0; i < 6; i++)
+            {
+                *(charPtr + i) = finalMacDest[i];
+            }
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            charPtr += 6;
+            char macSource[18];
+            correctMAC = false;
+            while (strlen(macSource) != 17 || correctMAC == false)
+            {
+                printf("Source MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
+                fgets(macSource, 18, stdin);
+                getchar();
+                for (int i = 0; i < 18; i++)
+                {
+                    if (macSource[i] == '\n')
+                    {
+                        macSource[i] = '\0';
+                    }
+                }
+                if (strlen(macSource) != 17)
+                {
+                    printf("Incorrect length, try again.\n");
+                    getchar();
+                }
+                else
+                {
+                    correctMAC = true;
+                    for (int i = 0; i < 5 && correctMAC == true; i++)
+                    {
+                        if (macSource[(i * 3) + 2] != ':')
+                        {
+                            correctMAC = false;
+                        }
+                    }
+                    for (int i = 0; i < 6 && correctMAC == true; i++)
+                    {
+                        if (macSource[i * 3] > 102 || (macSource[i * 3] > 0 && macSource[i * 3] < 48) 
+                        || (macSource[i * 3] > 70 && macSource[i * 3] < 97) || (macSource[i * 3] > 57 && macSource[i * 3] < 65))
+                        {
+                            correctMAC = false;
+                        }
+                        else if (macSource[(i * 3) + 1] > 102 || (macSource[(i * 3) + 1] > 0 && macSource[(i * 3) + 1] < 48) 
+                        || (macSource[(i * 3) + 1] > 70 && macSource[(i * 3) + 1] < 97) || (macSource[(i * 3) + 1] > 57 && macSource[(i * 3) + 1] < 65))
+                        {
+                            correctMAC = false;
+                        }
+                    }
+                    if (correctMAC == false)
+                    {
+                        printf("Incorrect input, please try again.\n");
+                    }
+                }
+           }
+            int macS[6];
+            sscanf(macSource, "%x:%x:%x:%x:%x:%x", &macS[0], &macS[1], &macS[2], &macS[3], &macS[4], &macS[5]);
+            char finalMacSource[6];
+            for (int i = 0; i < 6; i++)
+            {
+                finalMacSource[i] = macS[i];
+            }
+            for (int i = 0; i < 6; i++)
+            {
+                *(charPtr + i) = finalMacSource[i];
+            }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            printf("Ethertype version set to 0x0800 - the only allowed.");
+            charPtr += 6;
+            char ipType[] = "08:00";
+            int ipT[2];
+            sscanf(ipType, "%x:%x", &ipT[0], &ipT[1]);
+            char finalIpType[2];
+            finalIpType[0] = ipT[0];
+            finalIpType[1] = ipT[1];
+            *charPtr = finalIpType[0];
+            *(charPtr + 1) = finalIpType[1];
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            printf("\n---IP-Layer---");
+            printf("\nIP-version set to 4 - the only allowed.");
+            int ihl = -1;
+            bool correctIHL = false;
+            while (correctIHL == false)
+            {
+                printf("\nIHL (5 (no options) or 6 (with options)): ");
+                scanf("%d", &ihl);
+                getchar();
+                if (ihl == 5 || ihl == 6)
+                {
+                    correctIHL = true;
+                }
+                else
+                {
+                    printf("Incorrect input, please try again.\n");
+                }
+            }
+            char ipVer[2];
+            if (ihl == 5)
+            {
+                ipVer[0] = '4';
+                ipVer[1] = '5';
+
+            }
+            else
+            {
+                ipVer[0] = '4';
+                ipVer[1] = '6';
+            }
+            int ipV;
+            sscanf(ipVer, "%x", &ipV);
+            printf("%x", ipV);
+            getchar();
+            char finalIpVer = ipV;
+            charPtr += 2;
+            *charPtr = finalIpVer;
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////             
+            charPtr += 1;
+            int dscp = -1;
+            bool correctDSCP = false;
+            while (correctDSCP == false)
+            {
+                printf("DSCP (0 - 63): ");
+                scanf("%d", &dscp);
+                getchar();
+                if (dscp < 0 || dscp > 63)
+                {
+                    printf("Incorrect input, please try again.\n");
+                }
+                else
+                {
+                    correctDSCP = true;
+                }
+            }
+            int ECN = -1;
+            bool correctECN = false;
+            while(correctECN == false)
+            {
+                printf("ECN (0 - 3): ");
+                scanf("%d", &ECN);
+                if (ECN < 0 || ECN > 3)
+                {
+                    printf("Incorrect input, please try again.\n");
+                }
+                else
+                {
+                    correctECN = true;
+                }
+            }
+            dscp = dscp << 2;
+            int finalDSF = dscp | ECN;
+            unsigned char finalDsfAsChar = finalDSF;
+            *charPtr = finalDsfAsChar;
+//////////////////////////////////////////////////////////////////////////////////////
+            charPtr += 1;
+            unsigned short totalLength = -1;
+            bool correctTotalLength = false;
+            while (correctTotalLength == false)
+            {
+                printf("Total Length (%d - 65535): ", (ihl * 4));
+                scanf("%hd", &totalLength);
+                if (totalLength >= (ihl * 4) && totalLength <= 65535)
+                {
+                    correctTotalLength = true;
+                }
+                else
+                {
+                    printf("Incorrect input, please try again.\n");
+                }
+            }
+            unsigned short* shortPtr = (unsigned short*)charPtr;
+            *shortPtr = htons(totalLength);
+//////////////////////////////////////////////////////////////////////////////////////
+            shortPtr += 1;
+            unsigned short ID = -1;
+            bool correctId = false;
+            getchar();
+            while (correctId == false)
+            {
+                bool isANumber = true;
+                char check [6];
+                printf("ID (0 - 65535): ");
+                fgets(check, 6, stdin);
+                for (int i = 0; i < 5; i++)
+                {
+                    if (check[i] == '\n')
+                    {
+                        check[i] = '\0';
+                    }
+                }
+                for (int i = 0; i < strlen(check) && isANumber == true; i++)
+                {
+                    if (!(isdigit(check[i])))
+                    {
+                        isANumber = false;
+                    }
+                }
+                if (isANumber == true)
+                {
+                    ID = atoi(check);
+                    if (ID >= 0 && ID <= 65535)
+                    {
+                        correctId = true;
+                    }
+                }
+                if (!correctId || !isANumber)
+                {
+                    printf("Incorrect input, please try again.");
+                }
+            }
+            *shortPtr = htons(ID);
+///////////////////////////////////////////////////////////////////////////////////////
+            shortPtr += 1;
+            printf("Flag set to 0x4000 - Dont fragment.");
+            unsigned short flag = 0b0100000000000000;
+            *shortPtr = htons(flag);
+/////////////////////////////////////////////////////////////////////////////////////////
+            shortPtr += 1;
+
+            unsigned short ttl = -1;
+            bool correctTtl = false;
+            getchar();
+            while (correctTtl == false)
+            {
+                bool isANumber = true;
+                char check [4];
+                printf("Time-to-live (1 - 255): ");
+                fgets(check, 6, stdin);
+                for (int i = 0; i < 4; i++)
+                {
+                    if (check[i] == '\n')
+                    {
+                        check[i] = '\0';
+                    }
+                }
+                for (int i = 0; i < strlen(check) && isANumber == true; i++)
+                {
+                    if (!(isdigit(check[i])))
+                    {
+                        isANumber = false;
+                    }
+                }
+                if (isANumber == true)
+                {
+                    ttl = atoi(check);
+                    printf("TTL: %d", ttl);
+                    getchar();
+                    if (ttl >= 1 && ttl <= 65535)
+                    {
+                        correctTtl = true;
+                    }
+                }
+                if (!correctId || !isANumber)
+                {
+                    printf("Incorrect input, please try again.\n");
+                }
+            }
+            charPtr = (u_char*)shortPtr;
+            *charPtr = ttl;     
+///////////////////////////////////////////////////////////////////////////////////
+            charPtr += 2;
+            shortPtr = (unsigned short*)charPtr;
+            printf("Header checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+///////////////////////////////////////////////////////////////////////////////////            
+            shortPtr += 1;
+            
+
+        }
+                    
+                    
+
+
+        else
+        {
+            fprintf(stderr, "Error; input out of bounds.");
+            getchar();
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Error; no file loaded into memory.");
+        getchar();
     }
 }
