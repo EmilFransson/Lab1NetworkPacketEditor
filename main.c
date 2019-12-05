@@ -26,6 +26,7 @@ void listPackages(pcap_t *pcap, uint32_t *nrOfPackets);
 void view(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet);
 void edit(uint32_t *nrOfPackets);
 void addInsert(uint32_t *nrOfPackets);
+void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap);
 short shortFunction(char *fieldToEdit, unsigned short *shortPtr, unsigned int lowerLimit, unsigned int upperLimit, bool convertToChar, bool onlyReturn);
 int intFunction(char *fieldToEdit, unsigned int *shortPtr, unsigned long lowerLimit, unsigned long upperLimit, bool onlyReturn);
 bool userWantsToEdit(char *fieldtoEdit);
@@ -68,6 +69,10 @@ int main()
 
         case 6:
             addInsert(&nrOfPackets);
+            break;
+
+        case 7:
+            saveToFile(&nrOfPackets, pcap);
             break;
 
         case 9:
@@ -922,7 +927,7 @@ void edit(uint32_t *nrOfPackets)
                 printf("\nPress enter to return to menu.");
                 getchar();
             }
-            if (*charPtr == 1) //ICMP
+            else if (*charPtr == 1) //ICMP
             {
                 printf("\n---ICMP Layer---\n\n");
                 charPtr += 11; //Moving back
@@ -975,6 +980,45 @@ void edit(uint32_t *nrOfPackets)
     }
 }
 
+void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap)
+{
+    if (*nrOfPackets > 0)
+    {
+        uint32_t capacity = 30;
+        char fileName[capacity];
+        printf("Enter filename: ");
+        fgets(fileName, capacity, stdin);
+        fileName[strlen(fileName) - 1] = '\0';
+        bool correctFileEnding = false;
+
+        if (fileName[strlen(fileName) - 4] == '.' && fileName[strlen(fileName) - 3] == 'p' && fileName[strlen(fileName) - 2] == 'c' && fileName[strlen(fileName) - 1 == 'a'] && fileName[strlen(fileName)] == 'p')
+        {
+            correctFileEnding = true;
+        }
+        if (correctFileEnding == true)
+        {
+
+            pcap_dumper_t *pcapDumper = pcap_dump_open(pcap, fileName);
+            for (int i = 0; i < *nrOfPackets; i++)
+            {
+                pcap_dump((u_char *)pcapDumper, packets[i].header, packets[i].packet);
+            }
+            printf("Packets saved to file successfully");
+            getchar();
+        }
+        else
+        {
+            fprintf(stderr, "Error; incorrect file ending input");
+            getchar();
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Error; no file loaded into memory.");
+        getchar();
+    }
+}
+
 void addInsert(uint32_t *nrOfPackets)
 {
     if (*nrOfPackets > 0)
@@ -993,10 +1037,10 @@ void addInsert(uint32_t *nrOfPackets)
         }
         else if (choice == 2)
         {
-            printf("At what index would you like to insert the packet? The following range is possible: 0 - %d: ", *(nrOfPackets)-2);
+            printf("At what index would you like to insert the packet? The following range is possible: 0 - %d: ", *(nrOfPackets)-1);
             scanf("%d", &index);
             getchar();
-            if (index >= 0 && index <= *(nrOfPackets)-2)
+            if (index >= 0 && index <= *(nrOfPackets)-1)
             {
                 correctChoice = true;
             }
@@ -1441,7 +1485,6 @@ void addInsert(uint32_t *nrOfPackets)
 
                 shortPtr += 1;
                 //printf("UDP checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
-                //printf("\nPacket %d has been edited, use view -or list-function from the menu to view your changes.", (packetChoice + 1));
 
                 printf("\nPacket added!");
                 printf("\nPress enter to return to menu.");
@@ -1518,7 +1561,6 @@ void addInsert(uint32_t *nrOfPackets)
                 shortPtr += 1;
                 ///////////////////////////////////////////////
                 //printf("TCP Header checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
-                //printf("\nPacket %d has been edited, use view -or list-function from the menu to view your changes.", (packetChoice + 1));
                 printf("\nPacket added!");
                 printf("\nPress enter to return to menu.");
                 getchar();
@@ -1545,10 +1587,26 @@ void addInsert(uint32_t *nrOfPackets)
                 shortPtr += 1;
                 shortFunction("Sequence number", shortPtr, 0, 65535, false, false);
 
-                //printf("\nPacket %d has been edited, use view -or list-function from the menu to view your changes.", (packetChoice + 1));
                 printf("\nPacket has been added.");
+                if (choice == 2)
+                {
+                    printf("\nNote that it will be displayed as packet %d in the view -and list packages-functions", (index + 1));
+                }
                 printf("\nPress enter to return to menu.");
                 getchar();
+            }
+
+            if (choice == 2) // insert
+            {
+                Packets temp;
+                temp.header = packets[*nrOfPackets - 1].header;
+                temp.packet = packets[*nrOfPackets - 1].packet;
+
+                for (int i = *nrOfPackets - 1; i > index; i--)
+                {
+                    packets[i] = packets[i - 1];
+                }
+                packets[index] = temp;
             }
         }
         else
