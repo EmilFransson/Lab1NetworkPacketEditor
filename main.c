@@ -8,6 +8,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
+#include <netinet/ip_icmp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pcap.h>
@@ -19,20 +20,27 @@ typedef struct
 } Packets;
 Packets *packets = NULL;
 
-int menu();
-pcap_t *loadFile(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet);
+int menu(int testing);
+pcap_t *loadFile(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet, int *testing);
 uint32_t showNumberOfPackets(pcap_t *pcap, long *pos, struct pcap_pkthdr *header, const uint8_t *packet);
 void listPackages(pcap_t *pcap, uint32_t *nrOfPackets);
 void view(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet);
 void edit(uint32_t *nrOfPackets);
-void addInsert(uint32_t *nrOfPackets);
-void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap);
+void addInsert(uint32_t *nrOfPackets, int *testing);
+void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap, int *testing);
 short shortFunction(char *fieldToEdit, unsigned short *shortPtr, unsigned int lowerLimit, unsigned int upperLimit, bool convertToChar, bool onlyReturn);
 int intFunction(char *fieldToEdit, unsigned int *shortPtr, unsigned long lowerLimit, unsigned long upperLimit, bool onlyReturn);
 bool userWantsToEdit(char *fieldtoEdit);
+uint16_t checkSum(void *vData, size_t length);
 
-int main()
+int main(int argc, char *argv[])
 {
+    int testing = -100;
+    if (argc == 2)
+    {
+        testing = 1;
+    }
+
     uint32_t choice = -1;
     pcap_t *pcap = NULL;
     long pos = -1;
@@ -43,12 +51,12 @@ int main()
     while (choice != 9)
     {
         system("clear");
-        choice = menu();
+        choice = menu(testing);
         system("clear");
         switch (choice)
         {
         case 1:
-            pcap = loadFile(pcap, &pos, &nrOfPackets, header, packet);
+            pcap = loadFile(pcap, &pos, &nrOfPackets, header, packet, &testing);
             break;
 
         case 2:
@@ -68,12 +76,16 @@ int main()
             break;
 
         case 6:
-            addInsert(&nrOfPackets);
+            addInsert(&nrOfPackets, &testing);
             break;
 
         case 7:
-            saveToFile(&nrOfPackets, pcap);
+            saveToFile(&nrOfPackets, pcap, &testing);
             break;
+
+            //case 8:
+            //    help();
+            //    break;
 
         case 9:
             printf("Exiting program...\n");
@@ -98,33 +110,68 @@ int main()
     return 0;
 }
 
-int menu()
+int menu(int testing)
 {
     uint32_t choice = -1;
-    printf("1. Read filename into memory.\n\n2. Show number of packets present.\n\n3. List range of packets.\n\n4. View packet.\n\n5. Edit packet.\n\n6. Add/Insert packet.\n\n7. Write to file.\n\n8. Help.\n\n9. Quit program.\n\n");
-    printf("Please enter your choice: ");
-    scanf("%i", &choice);
-    getchar();
+    if (testing < 0)
+    {
+        printf("1. Read filename into memory.\n\n2. Show number of packets present.\n\n3. List range of packets.\n\n4. View packet.\n\n5. Edit packet.\n\n6. Add/Insert packet.\n\n7. Write to file.\n\n8. Help.\n\n9. Quit program.\n\n");
+        printf("Please enter your choice: ");
+        scanf("%i", &choice);
+        getchar();
+    }
+    else
+    {
+        choice = testing;
+    }
     return choice;
 }
 
-pcap_t *loadFile(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet)
+pcap_t *loadFile(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *header, const uint8_t *packet, int *testing)
 {
     if (pcap == NULL)
     {
         uint32_t capacity = 30;
-        char errorBuffer[PCAP_ERRBUF_SIZE];
         char fileName[capacity];
-        printf("Enter filename: ");
-        fgets(fileName, capacity, stdin);
-        fileName[strlen(fileName) - 1] = '\0';
+        char errorBuffer[PCAP_ERRBUF_SIZE];
+        if (*testing < 0)
+        {
+            printf("Enter filename: ");
+            fgets(fileName, capacity, stdin);
+            fileName[strlen(fileName) - 1] = '\0';
+        }
+        else
+        {
+            fileName[0] = 'N';
+            fileName[1] = 'e';
+            fileName[2] = 't';
+            fileName[3] = 'w';
+            fileName[4] = 'o';
+            fileName[5] = 'r';
+            fileName[6] = 'k';
+            fileName[7] = 'D';
+            fileName[8] = 'u';
+            fileName[9] = 'm';
+            fileName[10] = 'p';
+            fileName[11] = '.';
+            fileName[12] = 'p';
+            fileName[13] = 'c';
+            fileName[14] = 'a';
+            fileName[15] = 'p';
+            fileName[16] = '\0';
+            *testing = 6;
+        }
         pcap = pcap_open_offline(fileName, errorBuffer);
 
         packets = calloc(0, sizeof(struct pcap_pkthdr *) + sizeof(uint8_t *));
         if (pcap != NULL)
         {
-            printf("File '%s' opened successfully!", fileName);
-            getchar();
+            if (*testing < 0)
+            {
+                printf("File '%s' opened successfully!", fileName);
+                getchar();
+            }
+
             *pos = ftell(pcap_file(pcap));
 
             fseek(pcap_file(pcap), *pos, SEEK_SET);
@@ -196,13 +243,147 @@ void listPackages(pcap_t *pcap, uint32_t *nrOfPackets)
         printf("\nPlease input the end-Id of the packet range to be listed, as a single digit: ");
         scanf("%d", &endIndex);
         getchar();
-
+        printf("\n");
         if (startIndex <= *nrOfPackets && startIndex > 0 && endIndex <= *nrOfPackets && endIndex >= startIndex)
         {
+
+            startIndex--;
+            endIndex--;
             for (int i = startIndex; i <= endIndex; i++)
             {
-                printf("PktId%d\n", i);
+                printf("Packet %d:", i + 1);
+                printf("\nCapture Length: %d", (int)packets[i].header->caplen);
+                printf("\nLength: %d", packets[i].header->len);
+                printf("\nCapture time: %f micro-seconds", (float)packets[i].header->ts.tv_usec);
+
+                u_char *charPtr = (u_char *)packets[i].packet;
+
+                printf("\n\n---Ethernet layer---\n\n");
+                printf("Destination MAC Adress: %02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3), *(charPtr + 4), *(charPtr + 5));
+                charPtr += 6;
+                printf("\nSource MAC Adress: %02x:%02x:%02x:%02x:%02x:%02x", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3), *(charPtr + 4), *(charPtr + 5));
+                charPtr += 6;
+                unsigned short *shortPtr = (unsigned short *)charPtr;
+                if (ntohs(*shortPtr) == 0x0800)
+                {
+                    printf("\nEthertype: 0x0800 (IP)");
+                    printf("\n\n---IP Layer---\n");
+                    shortPtr += 1;
+                    charPtr = (u_char *)shortPtr;
+                    char ipVer = *charPtr >> 4;
+                    printf("\nIP-Version: %d", ipVer);
+                    char headerLength = *charPtr << 4;
+                    headerLength = headerLength >> 4;
+                    printf("\nIP Header Length: %d", headerLength * 4); //Number of 32-bit words, so we multiply by 4 to get the bytes it surmount to.
+                    charPtr += 1;
+                    printf("\nType-Of-Service (tos / DSCP|ECN): 0x%02x, (%d)", *charPtr, *charPtr);
+                    charPtr += 1;
+                    shortPtr = (unsigned short *)charPtr;
+                    printf("\nIP-Length: %d", ntohs(*shortPtr));
+                    shortPtr += 1;
+                    printf("\nID: 0x%04x, (%d)", ntohs(*shortPtr), ntohs(*shortPtr));
+                    shortPtr += 1;
+                    charPtr = (u_char *)shortPtr;
+                    printf("\nFlag: 0x%03x", *charPtr);
+                    printf("\nFragment Offset: %02x", *(charPtr + 1));
+                    charPtr += 2;
+                    printf("\nTime-to-live (ttl): %d", *charPtr);
+                    charPtr += 1;
+                    if (*charPtr == 17) //UDP
+                    {
+                        printf("\nIP-Protocol: %d (UDP)", *charPtr);
+                        charPtr += 1;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        charPtr = (u_char *)shortPtr;
+                        printf("\n\n---UDP Layer---\n");
+                        printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nUDP Source Port: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nUDP Destination Port: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nLength: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nChecksum: 0x%x", ntohs(*shortPtr));
+                    }
+                    else if (*charPtr == 6) //TCP
+                    {
+                        printf("\nIP-Protocol: %d (TCP)", *charPtr);
+                        charPtr += 1;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        charPtr = (u_char *)shortPtr;
+                        printf("\n\n---TCP Layer---\n");
+                        printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nTCP Source Port: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nTCP Destination Port: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        unsigned int *intPtr = (unsigned int *)shortPtr;
+                        printf("\nSequence Number: 0x%08x", ntohl(*intPtr));
+                        intPtr += 1;
+                        printf("\nAcknowledgement Number: 0x%08x", ntohl(*intPtr));
+                        intPtr += 1;
+                        charPtr = (u_char *)intPtr;
+                        char firstFourBits = *charPtr >> 4;
+                        printf("\nOffset: %d", (firstFourBits * 4)); //Number of 32-bit words, so we multiply by 4 to get the bytes it surmount to.
+                        char lastFourBits = *charPtr << 4;
+                        lastFourBits = lastFourBits >> 4;
+                        printf("\nSize: %d", lastFourBits); //Should be 0.
+                        charPtr += 1;
+                        printf("\nFlag: 0x%03x", *charPtr);
+                        charPtr += 1;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nWindow size: %d", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nChecksum: 0x%04x", ntohs(*shortPtr));
+                    }
+                    else if (*charPtr == 1) // ICMP
+                    {
+                        printf("\nIP-Protocol: %d (ICMP)", *charPtr);
+                        charPtr += 1;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nIP-Checksum: 0x%04x", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        charPtr = (u_char *)shortPtr;
+                        printf("\n\n---ICMP Layer---\n");
+                        printf("\nIP-source: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        printf("\nIP-destination: %d.%d.%d.%d", *charPtr, *(charPtr + 1), *(charPtr + 2), *(charPtr + 3));
+                        charPtr += 4;
+                        printf("\nType: %d", *charPtr);
+                        charPtr += 1;
+                        printf("\nCode: %d", *charPtr);
+                        charPtr += 1;
+                        shortPtr = (unsigned short *)charPtr;
+                        printf("\nChecksum: 0x%04x", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nID: 0x%04x", ntohs(*shortPtr));
+                        shortPtr += 1;
+                        printf("\nSequence Number: 0x%04x", ntohs(*shortPtr));
+                    }
+                    else
+                    {
+                        printf("Transport layer not of type TCP, UDP, or ICMP - the following packet information will be disregarded.");
+                    }
+                }
+                else
+                {
+                    printf("\nPacket not of ethertype IPV4; the following packet infomation will be disregarded.");
+                }
+                printf("\n\n");
             }
+            printf("Press enter key to continue.");
             getchar();
         }
         else
@@ -396,7 +577,7 @@ void edit(uint32_t *nrOfPackets)
                 packets[packetChoice].header->ts.tv_usec = microSec;
                 packets[packetChoice].header->ts.tv_sec = (microSec / 1000000);
             }
-            //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
             u_char *charPtr = (u_char *)packets[packetChoice].packet;
             if (userWantsToEdit("Destination MAC adress"))
             {
@@ -459,7 +640,7 @@ void edit(uint32_t *nrOfPackets)
                     }
                 }
             }
-            //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
             charPtr += 6;
             if (userWantsToEdit("Source MAC adress"))
             {
@@ -522,7 +703,7 @@ void edit(uint32_t *nrOfPackets)
                     }
                 }
             }
-            /////////////////////////////////////////////////////////////
+
             printf("Ethertype version set to 0x0800 - the only allowed.");
             charPtr += 6;
             char ipType[] = "08:00";
@@ -533,7 +714,7 @@ void edit(uint32_t *nrOfPackets)
             finalIpType[1] = ipT[1];
             *charPtr = finalIpType[0];
             *(charPtr + 1) = finalIpType[1];
-            ///////////////////////////////////////////////////////////
+
             printf("\n\n---IP-Layer---\n");
             printf("\nIP-version set to 4 - the only allowed.\n");
             charPtr += 2;
@@ -542,7 +723,6 @@ void edit(uint32_t *nrOfPackets)
             if (userWantsToEdit("Ihl"))
             {
                 ihl = shortFunction("Ihl", shortPtr, 5, 6, false, true);
-                printf("%d", ihl);
                 char ipVer[2];
                 if (ihl == 5)
                 {
@@ -553,59 +733,60 @@ void edit(uint32_t *nrOfPackets)
                 {
                     ipVer[0] = '4';
                     ipVer[1] = '6';
+                    printf("Note that, even though options according to this field now is enabled, it is excluded from this assignment, per instructions.\n");
                 }
                 int ipV;
                 sscanf(ipVer, "%x", &ipV);
                 char finalIpVer = ipV;
                 *charPtr = finalIpVer;
             }
-            ////////////////////////////////////
+
             charPtr += 1;
             shortPtr = (unsigned short *)charPtr;
             if (userWantsToEdit("TOS"))
             {
                 int dscp = (int)shortFunction("DSCP", shortPtr, 0, 63, false, true);
                 int ECN = (int)shortFunction("ECN", shortPtr, 0, 3, false, true);
-                printf("dscp: %d", dscp);
-                printf("ECN: %d", ECN);
                 dscp = dscp << 2;
                 int finalDSF = dscp | ECN;
                 unsigned char finalDsfAsChar = finalDSF;
                 *charPtr = finalDsfAsChar;
             }
-            ///////////////////////////////////
+
             charPtr += 1;
             shortPtr = (unsigned short *)charPtr;
             if (userWantsToEdit("Total length"))
             {
                 shortFunction("Total length", shortPtr, (ihl * 4), 65535, false, false);
             }
-            //////////////////////////////////////
+
             shortPtr += 1;
             if (userWantsToEdit("ID"))
             {
                 shortFunction("ID", shortPtr, 0, 65535, false, false);
             }
-            //////////////////////////////////////
+
             shortPtr += 1;
             if (userWantsToEdit("IP Flag"))
             {
                 short flag = shortFunction("IP Flag", NULL, 0, 63, false, true);
                 *shortPtr = htons(flag << 8);
             }
-            //////////////////////////////////////
+
             shortPtr += 1;
             if (userWantsToEdit("Time-to-live"))
             {
                 shortFunction("Time-to-live", shortPtr, 1, 255, true, false);
             }
 
-            /////////////////////////////////////
             shortPtr += 1;
             charPtr = (unsigned char *)shortPtr;
             shortPtr = (unsigned short *)charPtr;
-            printf("Header checksum 0x%04x left identical; edit does not have to handle changes in packet size.\n", ntohs(*shortPtr));
-            /////////////////////////////////////
+            if (userWantsToEdit("IP checksum"))
+            {
+                shortFunction("IP checksum", shortPtr, 0, 255, false, false);
+            }
+
             shortPtr += 1;
             charPtr = (u_char *)shortPtr;
             if (userWantsToEdit("IP Source"))
@@ -706,7 +887,7 @@ void edit(uint32_t *nrOfPackets)
             {
                 charPtr += 4;
             }
-            ///////////////////////////////////////////////////////////////////////////////////////
+
             if (userWantsToEdit("IP destination"))
             {
                 bool correctIpDest = false;
@@ -805,7 +986,7 @@ void edit(uint32_t *nrOfPackets)
             {
                 charPtr += 4;
             }
-            ////////////////////////////////////////////////////////////////
+
             charPtr -= 11;      //Moving to transport protocol identifier
             if (*charPtr == 17) //UDP
             {
@@ -816,13 +997,13 @@ void edit(uint32_t *nrOfPackets)
                 {
                     shortFunction("Source port", shortPtr, 1, 65535, false, false);
                 }
-                /////////////////////////////////////////////////////////
+
                 shortPtr += 1;
                 if (userWantsToEdit("Destination port"))
                 {
                     shortFunction("Destination port", shortPtr, 1, 65535, false, false);
                 }
-                //////////////////////////////////////////////////////////
+
                 shortPtr += 1;
                 if (userWantsToEdit("UDP length"))
                 {
@@ -830,7 +1011,10 @@ void edit(uint32_t *nrOfPackets)
                 }
 
                 shortPtr += 1;
-                printf("UDP checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+                if (userWantsToEdit("UDP checksum"))
+                {
+                    shortFunction("UDP checksum", shortPtr, 0, 255, false, false);
+                }
                 printf("\nPacket %d has been edited, use view -or list-function from the menu to view your changes.", (packetChoice + 1));
                 printf("\nPress enter to return to menu.");
                 getchar();
@@ -844,7 +1028,7 @@ void edit(uint32_t *nrOfPackets)
                 {
                     shortFunction("Source port", shortPtr, 1, 65535, false, false);
                 }
-                //////////////////////////////////////////////////////
+
                 shortPtr += 1;
                 if (userWantsToEdit("Destination port"))
                 {
@@ -852,61 +1036,63 @@ void edit(uint32_t *nrOfPackets)
                 }
 
                 shortPtr += 1;
-                ///////////////////////////////////////////////////////
                 unsigned int *intPtr = (unsigned int *)shortPtr;
                 if (userWantsToEdit("Sequence number"))
                 {
                     intFunction("Sequence number", intPtr, 0, 4294967295, false);
                 }
                 intPtr += 1;
-                ////////////////////////////////////////////////////////
+
                 if (userWantsToEdit("Acknowledgment number"))
                 {
                     intFunction("Acknowledgment number", intPtr, 0, 4294967295, false);
                 }
                 intPtr += 1;
-                ////////////////////////////////////////////////////
-                charPtr = (u_char *)intPtr;
-                unsigned short tcpHeaderLength = -1;
-                bool correctTcpHeaderLength = false;
-                while (correctTcpHeaderLength == false)
-                {
-                    bool isANumber = true;
-                    char check[4];
-                    printf("IHL size (5 - 15): ");
-                    fgets(check, 4, stdin);
-                    for (int i = 0; i < 4; i++)
-                    {
-                        if (check[i] == '\n')
-                        {
-                            check[i] = '\0';
-                        }
-                    }
-                    for (int i = 0; i < strlen(check) && isANumber == true; i++)
-                    {
-                        if (!(isdigit(check[i])))
-                        {
-                            isANumber = false;
-                        }
-                    }
-                    if (isANumber == true)
-                    {
-                        tcpHeaderLength = atoi(check);
 
-                        if (tcpHeaderLength >= 5 && tcpHeaderLength <= 15)
+                charPtr = (u_char *)intPtr;
+                if (userWantsToEdit("IHL"))
+                {
+                    unsigned short tcpHeaderLength = -1;
+                    bool correctTcpHeaderLength = false;
+                    while (correctTcpHeaderLength == false)
+                    {
+                        bool isANumber = true;
+                        char check[4];
+                        printf("IHL size (5 - 15): ");
+                        fgets(check, 4, stdin);
+                        for (int i = 0; i < 4; i++)
                         {
-                            correctTcpHeaderLength = true;
+                            if (check[i] == '\n')
+                            {
+                                check[i] = '\0';
+                            }
+                        }
+                        for (int i = 0; i < strlen(check) && isANumber == true; i++)
+                        {
+                            if (!(isdigit(check[i])))
+                            {
+                                isANumber = false;
+                            }
+                        }
+                        if (isANumber == true)
+                        {
+                            tcpHeaderLength = atoi(check);
+
+                            if (tcpHeaderLength >= 5 && tcpHeaderLength <= 15)
+                            {
+                                correctTcpHeaderLength = true;
+                            }
+                        }
+                        if (!correctTcpHeaderLength || !isANumber)
+                        {
+                            printf("Incorrect input, please try again.\n");
                         }
                     }
-                    if (!correctTcpHeaderLength || !isANumber)
-                    {
-                        printf("Incorrect input, please try again.\n");
-                    }
+                    u_char *temp = (u_char *)&tcpHeaderLength;
+                    *temp = *temp << 4;
+                    *charPtr = *temp;
                 }
-                u_char *temp = (u_char *)&tcpHeaderLength;
-                *temp = *temp << 4;
-                *charPtr = *temp;
-                //////////////////////////////////////////////////
+
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
                 if (userWantsToEdit("TCP Flag"))
@@ -914,15 +1100,23 @@ void edit(uint32_t *nrOfPackets)
                     shortFunction("TCP Flag", shortPtr, 0, 63, true, false);
                 }
                 charPtr += 1;
-                ////////////////////////////////////////////////
+
                 shortPtr = (unsigned short *)charPtr;
                 if (userWantsToEdit("Window size value"))
                 {
                     shortFunction("Window size value", shortPtr, 1, 65535, false, false);
                 }
+
                 shortPtr += 1;
-                ///////////////////////////////////////////////
-                printf("TCP Header checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+                if (userWantsToEdit("TCP checksum"))
+                {
+                    shortFunction("TCP checksum", shortPtr, 0, 255, false, false);
+                }
+
+                shortPtr += 1;
+                *shortPtr = 0;
+                printf("Urgent pointer set to 0.");
+
                 printf("\nPacket %d has been edited, use view -or list-function from the menu to view your changes.", (packetChoice + 1));
                 printf("\nPress enter to return to menu.");
                 getchar();
@@ -936,6 +1130,7 @@ void edit(uint32_t *nrOfPackets)
                 {
                     shortFunction("Type", shortPtr, 0, 255, true, false);
                 }
+
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
                 if (userWantsToEdit("Code"))
@@ -944,12 +1139,18 @@ void edit(uint32_t *nrOfPackets)
                 }
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
-                printf("ICMP checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+
+                if (userWantsToEdit("ICMP checksum"))
+                {
+                    shortFunction("ICMP checksum", shortPtr, 0, 255, false, false);
+                }
+
                 shortPtr += 1;
                 if (userWantsToEdit("ID"))
                 {
                     shortFunction("ID", shortPtr, 0, 65535, false, false);
                 }
+
                 shortPtr += 1;
                 if (userWantsToEdit("Sequence number"))
                 {
@@ -980,31 +1181,53 @@ void edit(uint32_t *nrOfPackets)
     }
 }
 
-void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap)
+void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap, int *testing)
 {
     if (*nrOfPackets > 0)
     {
         uint32_t capacity = 30;
         char fileName[capacity];
-        printf("Enter filename: ");
-        fgets(fileName, capacity, stdin);
-        fileName[strlen(fileName) - 1] = '\0';
-        bool correctFileEnding = false;
+        if (*testing < 0)
+        {
+            printf("Enter filename: ");
+            fgets(fileName, capacity, stdin);
+            fileName[strlen(fileName) - 1] = '\0';
+        }
+        else
+        {
+            fileName[0] = 'T';
+            fileName[1] = 'e';
+            fileName[2] = 's';
+            fileName[3] = 't';
+            fileName[4] = '.';
+            fileName[5] = 'p';
+            fileName[6] = 'c';
+            fileName[7] = 'a';
+            fileName[8] = 'p';
+            fileName[9] = '\0';
+        }
 
-        if (fileName[strlen(fileName) - 4] == '.' && fileName[strlen(fileName) - 3] == 'p' && fileName[strlen(fileName) - 2] == 'c' && fileName[strlen(fileName) - 1 == 'a'] && fileName[strlen(fileName)] == 'p')
+        bool correctFileEnding = false;
+        if (fileName[strlen(fileName) - 5] == '.' && fileName[strlen(fileName) - 4] == 'p' && fileName[strlen(fileName) - 3] == 'c' && fileName[strlen(fileName) - 2 == 'a'] && fileName[strlen(fileName) - 1] == 'p')
         {
             correctFileEnding = true;
         }
         if (correctFileEnding == true)
         {
-
             pcap_dumper_t *pcapDumper = pcap_dump_open(pcap, fileName);
             for (int i = 0; i < *nrOfPackets; i++)
             {
                 pcap_dump((u_char *)pcapDumper, packets[i].header, packets[i].packet);
             }
-            printf("Packets saved to file successfully");
-            getchar();
+            if (*testing < 0)
+            {
+                printf("Packets saved to file successfully.");
+                getchar();
+            }
+            else
+            {
+                *testing = 9;
+            }
         }
         else
         {
@@ -1019,17 +1242,27 @@ void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap)
     }
 }
 
-void addInsert(uint32_t *nrOfPackets)
+void addInsert(uint32_t *nrOfPackets, int *testing)
 {
     if (*nrOfPackets > 0)
     {
+
         uint32_t choice = -1;
         uint32_t index = -1;
         bool correctChoice = false;
-        printf("There are currently %d packets loaded into memory.", *nrOfPackets);
-        printf("\nWould you like to add (append at the end) or insert (at a specific index)? (1 - add, 2 - insert): ");
-        scanf("%d", &choice);
-        getchar();
+
+        if (*testing < 0)
+        {
+            printf("There are currently %d packets loaded into memory.", *nrOfPackets);
+            printf("\nWould you like to add (append at the end) or insert (at a specific index)? (1 - add, 2 - insert): ");
+            scanf("%d", &choice);
+            getchar();
+        }
+        else
+        {
+            choice = 1;
+        }
+
         if (choice == 1)
         {
             printf("The packet will be appended in memory after last packet %d.\n", *nrOfPackets);
@@ -1051,9 +1284,17 @@ void addInsert(uint32_t *nrOfPackets)
             unsigned short protocol = -1;
             while (correctProtocol == false)
             {
-                printf("Transport Protocol for the packet (ICMP - 1, TCP = 6, UDP - 17): ");
-                scanf("%hd", &protocol);
-                getchar();
+                if (*testing < 0)
+                {
+                    printf("Transport Protocol for the packet (ICMP - 1, TCP = 6, UDP - 17): ");
+                    scanf("%hd", &protocol);
+                    getchar();
+                }
+                else
+                {
+                    protocol = 17;
+                }
+
                 if (protocol == 1 || protocol == 6 || protocol == 17)
                 {
                     correctProtocol = true;
@@ -1063,34 +1304,58 @@ void addInsert(uint32_t *nrOfPackets)
                     printf("Incorrect input, please try again.");
                 }
             }
-            unsigned int minPacketSize = -1;
+            unsigned int minPacketSize = 0;
             if (protocol == 1) // ICMP
             {
-                minPacketSize = (14 + 20 + 8);
+                minPacketSize = (14 + 20 + 8 + 46);
             }
             else if (protocol == 6) // TCP
             {
-                minPacketSize = (14 + 20 + 20);
+                minPacketSize = (14 + 20 + 20 + 46);
             }
             else // UDP
             {
-                minPacketSize = (14 + 20 + 8);
+                minPacketSize = (14 + 20 + 8 + 46 + 12);
             }
 
             ++(*nrOfPackets);
             packets = realloc(packets, *nrOfPackets * sizeof(Packets));
             packets[*nrOfPackets - 1].header = (struct pcap_pkthdr *)malloc(sizeof(struct pcap_pkthdr *));
 
-            bpf_u_int32 capLen = (bpf_u_int32)intFunction("Capture length", NULL, minPacketSize, 4294967295, true);
+            bpf_u_int32 capLen = 0;
+            bpf_u_int32 totLen = 0;
+            if (protocol == 6) // TCP
+            {
+                totLen = (bpf_u_int32)intFunction("Total length", NULL, minPacketSize, 1554, true);
+                capLen = (bpf_u_int32)intFunction("Capture length", NULL, minPacketSize, 1554, true);
+            }
+            else
+            {
+                if (*testing < 0)
+                {
+                    totLen = (bpf_u_int32)intFunction("Total length", NULL, minPacketSize, 1542, true);
+                    capLen = (bpf_u_int32)intFunction("Capture length", NULL, minPacketSize, 1542, true);
+                }
+                else
+                {
+                    totLen = 200;
+                    capLen = 200;
+                }
+            }
             packets[*nrOfPackets - 1].header->caplen = capLen;
-
-            bpf_u_int32 totLen = (bpf_u_int32)intFunction("Total length", NULL, minPacketSize, 4294967295, true);
             packets[*nrOfPackets - 1].header->len = totLen;
-            unsigned int payloadSize = totLen - minPacketSize;
 
-            __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (micro seconds)", NULL, 1, 4294967295, true);
-            packets[*nrOfPackets - 1].header->ts.tv_usec = microSec;
-            packets[*nrOfPackets - 1].header->ts.tv_sec = (microSec / 1000000);
+            if (*testing < 0)
+            {
+                __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (micro seconds)", NULL, 1, 4294967295, true);
+                packets[*nrOfPackets - 1].header->ts.tv_usec = microSec;
+                packets[*nrOfPackets - 1].header->ts.tv_sec = (microSec / 1000000);
+            }
+            else
+            {
+                packets[*nrOfPackets - 1].header->ts.tv_usec = 100;
+                packets[*nrOfPackets - 1].header->ts.tv_sec = (100 / 1000000);
+            }
 
             packets[*nrOfPackets - 1].packet = (uint8_t *)malloc(totLen);
             u_char *charPtr = (u_char *)packets[*nrOfPackets - 1].packet;
@@ -1099,8 +1364,32 @@ void addInsert(uint32_t *nrOfPackets)
             while (correctMAC == false)
             {
                 char macDest[19];
-                printf("Destination MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
-                fgets(macDest, 19, stdin);
+                if (*testing < 0)
+                {
+                    printf("Destination MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
+                    fgets(macDest, 19, stdin);
+                }
+                else
+                {
+                    macDest[0] = '1';
+                    macDest[1] = '1';
+                    macDest[2] = ':';
+                    macDest[3] = '1';
+                    macDest[4] = '1';
+                    macDest[5] = ':';
+                    macDest[6] = '1';
+                    macDest[7] = '1';
+                    macDest[8] = ':';
+                    macDest[9] = '1';
+                    macDest[10] = '1';
+                    macDest[11] = ':';
+                    macDest[12] = '1';
+                    macDest[13] = '1';
+                    macDest[14] = ':';
+                    macDest[15] = '1';
+                    macDest[16] = '1';
+                    macDest[17] = '\0';
+                }
                 for (int i = 0; i < 19; i++)
                 {
                     if (macDest[i] == '\n')
@@ -1153,15 +1442,39 @@ void addInsert(uint32_t *nrOfPackets)
                     }
                 }
             }
-
             charPtr += 6;
 
             correctMAC = false;
             while (correctMAC == false)
             {
                 char macSource[19];
-                printf("Source MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
-                fgets(macSource, 19, stdin);
+                if (*testing < 0)
+                {
+                    printf("Source MAC Adress (WITH colons and in the form (XX:XX:XX:XX:XX:XX)): ");
+                    fgets(macSource, 19, stdin);
+                }
+                else
+                {
+                    macSource[0] = '2';
+                    macSource[1] = '2';
+                    macSource[2] = ':';
+                    macSource[3] = '2';
+                    macSource[4] = '2';
+                    macSource[5] = ':';
+                    macSource[6] = '2';
+                    macSource[7] = '2';
+                    macSource[8] = ':';
+                    macSource[9] = '2';
+                    macSource[10] = '2';
+                    macSource[11] = ':';
+                    macSource[12] = '2';
+                    macSource[13] = '2';
+                    macSource[14] = ':';
+                    macSource[15] = '2';
+                    macSource[16] = '2';
+                    macSource[17] = '\0';
+                }
+
                 for (int i = 0; i < 19; i++)
                 {
                     if (macSource[i] == '\n')
@@ -1232,7 +1545,20 @@ void addInsert(uint32_t *nrOfPackets)
             short ihl = *charPtr;
             unsigned short *shortPtr = (unsigned short *)charPtr;
 
-            ihl = shortFunction("Ihl", shortPtr, 5, 6, false, true);
+            struct ip ipHeader;
+            if (*testing < 0)
+            {
+                ihl = shortFunction("Ihl", shortPtr, 5, 6, false, true);
+            }
+            else
+            {
+                ihl = 5;
+            }
+
+            ipHeader.ip_hl = (unsigned int)ihl;
+            ipHeader.ip_v = 4;
+            ipHeader.ip_p = protocol;
+
             char ipVer[2];
             if (ihl == 5)
             {
@@ -1243,6 +1569,7 @@ void addInsert(uint32_t *nrOfPackets)
             {
                 ipVer[0] = '4';
                 ipVer[1] = '6';
+                printf("Note that, even though options according to this field now is enabled, it is excluded from this assignment, per instructions.\n");
             }
             int ipV;
             sscanf(ipVer, "%x", &ipV);
@@ -1251,36 +1578,75 @@ void addInsert(uint32_t *nrOfPackets)
 
             charPtr += 1;
             shortPtr = (unsigned short *)charPtr;
-            int dscp = (int)shortFunction("DSCP", shortPtr, 0, 63, false, true);
-            int ECN = (int)shortFunction("ECN", shortPtr, 0, 3, false, true);
+            int dscp = 40;
+            int ECN = 3;
+            if (*testing < 0)
+            {
+                dscp = (int)shortFunction("DSCP", NULL, 0, 63, false, true);
+                ECN = (int)shortFunction("ECN", NULL, 0, 3, false, true);
+            }
             dscp = dscp << 2;
             int finalDSF = dscp | ECN;
             unsigned char finalDsfAsChar = finalDSF;
             *charPtr = finalDsfAsChar;
+            ipHeader.ip_tos = *charPtr;
 
             charPtr += 1;
             shortPtr = (unsigned short *)charPtr;
-            shortFunction("Total length", shortPtr, (ihl * 4), 65535, false, false);
+            *shortPtr = htons(totLen - 14);
+            printf("IP total length calculated in accordance with your chosen frame length; %d.\n", ntohs(*shortPtr));
+            ipHeader.ip_len = *shortPtr;
 
             shortPtr += 1;
-            shortFunction("ID", shortPtr, 0, 65535, false, false);
+            if (*testing < 0)
+            {
+                shortFunction("ID", shortPtr, 0, 65535, false, false);
+            }
+            else
+            {
+                *shortPtr = htons(100);
+            }
+
+            ipHeader.ip_id = *shortPtr;
 
             shortPtr += 1;
-            short flag = shortFunction("IP Flag", NULL, 0, 63, false, true);
-            *shortPtr = htons(flag << 8);
+            short flag = 1;
+            if (*testing < 0)
+            {
+                short flag = shortFunction("IP Flag (1 - Don't fragment, 0 - fragment)", NULL, 0, 1, false, true);
+            }
+            if (flag == 1)
+            {
+                *shortPtr = htons(0b0100000000000000);
+            }
+            else
+            {
+                *shortPtr = htons(0b0000000000000000);
+            }
+            ipHeader.ip_off = *shortPtr;
 
             shortPtr += 1;
-            shortFunction("Time-to-live", shortPtr, 1, 255, true, false);
+            if (*testing < 0)
+            {
+                shortFunction("Time-to-live", shortPtr, 1, 255, true, false);
+            }
+            else
+            {
+                uint8_t *ptr = (uint8_t *)shortPtr;
+                *ptr = 200;
+            }
+            ipHeader.ip_ttl = *((char *)shortPtr);
 
-            ///////////////////////////////////// CHECKSUM TO BE CODED
             shortPtr += 1;
             charPtr = (unsigned char *)shortPtr;
             shortPtr = (unsigned short *)charPtr;
             *shortPtr = 0;
-            printf("Header checksum PLACEHOLDER\n");
-            /////////////////////////////////////
+            unsigned short *checkSumShort = shortPtr;
+            ipHeader.ip_sum = 0;
+
             shortPtr += 1;
             charPtr = (u_char *)shortPtr;
+            unsigned int *checkSumIntPtr = (unsigned int *)shortPtr;
 
             bool correctIpSource = false;
             while (correctIpSource == false)
@@ -1291,8 +1657,22 @@ void addInsert(uint32_t *nrOfPackets)
                 int previousInex = 0;
                 bool noLetters = true;
                 bool correctIpStructure = true;
-                printf("IP-Source (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
-                fgets(ipSource, 17, stdin);
+                if (*testing < 0)
+                {
+                    printf("IP-Source (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    fgets(ipSource, 17, stdin);
+                }
+                else
+                {
+                    ipSource[0] = '1';
+                    ipSource[1] = '.';
+                    ipSource[2] = '2';
+                    ipSource[3] = '.';
+                    ipSource[4] = '3';
+                    ipSource[5] = '.';
+                    ipSource[6] = '4';
+                    ipSource[7] = '\0';
+                }
                 for (int i = 0; i < strlen(ipSource) && noLetters == true; i++)
                 {
                     if (ipSource[i] == '\n')
@@ -1373,7 +1753,9 @@ void addInsert(uint32_t *nrOfPackets)
                     correctIpSource = true;
                 }
             }
+            ipHeader.ip_src.s_addr = *checkSumIntPtr;
 
+            checkSumIntPtr += 1;
             bool correctIpDest = false;
             while (correctIpDest == false)
             {
@@ -1382,8 +1764,23 @@ void addInsert(uint32_t *nrOfPackets)
                 int nrOfDots = 0;
                 bool noLetters = true;
                 bool correctIpStructure = true;
-                printf("IP-Destination (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
-                fgets(ipDest, 17, stdin);
+                if (*testing < 0)
+                {
+                    printf("IP-Destination (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    fgets(ipDest, 17, stdin);
+                }
+                else
+                {
+                    ipDest[0] = '4';
+                    ipDest[1] = '.';
+                    ipDest[2] = '3';
+                    ipDest[3] = '.';
+                    ipDest[4] = '2';
+                    ipDest[5] = '.';
+                    ipDest[6] = '1';
+                    ipDest[7] = '\0';
+                }
+
                 for (int i = 0; i < strlen(ipDest) && noLetters == true; i++)
                 {
                     if (ipDest[i] == '\n')
@@ -1465,6 +1862,9 @@ void addInsert(uint32_t *nrOfPackets)
                     correctIpDest = true;
                 }
             }
+            ipHeader.ip_dst.s_addr = *checkSumIntPtr;
+
+            *checkSumShort = checkSum(&ipHeader, 20);
 
             charPtr -= 11; //Moving to transport protocol identifier
             *charPtr = *((u_char *)&protocol);
@@ -1473,27 +1873,91 @@ void addInsert(uint32_t *nrOfPackets)
             {
                 printf("\n---UDP Layer---\n");
                 charPtr += 11; //Moving back
+                uint8_t *checkSumPtr = (uint8_t *)charPtr;
 
                 shortPtr = (unsigned short *)charPtr;
-                shortFunction("Source port", shortPtr, 1, 65535, false, false);
+                if (*testing < 0)
+                {
+                    shortFunction("Source port", shortPtr, 1, 65535, false, false);
+                }
+                else
+                {
+                    *shortPtr = htons(150);
+                }
 
                 shortPtr += 1;
-                shortFunction("Destination port", shortPtr, 1, 65535, false, false);
+                if (*testing < 0)
+                {
+                    shortFunction("Destination port", shortPtr, 1, 65535, false, false);
+                }
+                else
+                {
+                    *shortPtr = htons(250);
+                }
 
                 shortPtr += 1;
-                shortFunction("UDP length", shortPtr, 1, (65535 - (ihl * 4) - 8), false, false);
+                *shortPtr = htons(totLen - 14 - 20);
+                printf("UDP Length calculated in accordance with your chosen frame length; %d.\n", ntohs(*shortPtr));
+                uint32_t payloadSize = ntohs(*shortPtr) - 8;
 
                 shortPtr += 1;
-                //printf("UDP checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+                *shortPtr = 0;
 
-                printf("\nPacket added!");
-                printf("\nPress enter to return to menu.");
-                getchar();
+                shortPtr += 1;
+                charPtr = (unsigned char *)shortPtr;
+                for (int i = 0; i < payloadSize; i++) //Payload handled
+                {
+                    *charPtr = 0;
+                    charPtr += 1;
+                }
+
+                uint8_t *pseudoPacket = (uint8_t *)malloc(8 + payloadSize + 12);
+                checkSumIntPtr--;
+
+                unsigned int *pseudoPacketInt = (unsigned int *)pseudoPacket;
+                *pseudoPacketInt = *checkSumIntPtr;
+                pseudoPacketInt += 1;
+                checkSumIntPtr += 1;
+                *pseudoPacketInt = *checkSumIntPtr;
+                pseudoPacketInt += 1;
+                pseudoPacket = (uint8_t *)pseudoPacketInt;
+                *pseudoPacket = 0;
+                pseudoPacket += 1;
+                *pseudoPacket = 0b00010001;
+                pseudoPacket += 1;
+                unsigned short *pseudoPacketShort = (unsigned short *)pseudoPacket;
+                *pseudoPacketShort = htons(totLen - 14 - 20);
+                pseudoPacketShort += 1;
+                pseudoPacket = (uint8_t *)pseudoPacketShort;
+
+                for (int i = 0; i < 8 + payloadSize; i++)
+                {
+                    *pseudoPacket = *checkSumPtr;
+                    pseudoPacket += 1;
+                    checkSumPtr += 1;
+                }
+                pseudoPacket -= (12 + 8 + payloadSize);
+
+                shortPtr -= 1;
+                *shortPtr = checkSum(pseudoPacket, 8 + payloadSize + 12);
+
+                free(pseudoPacket);
+                if (*testing < 0)
+                {
+                    printf("\nPacket added!");
+                    printf("\nPress enter to return to menu.");
+                    getchar();
+                }
+                else
+                {
+                    *testing = 7;
+                }
             }
             else if (*charPtr == 6) //TCP
             {
                 printf("\n---TCP Layer---\n\n");
                 charPtr += 11; //Moving back
+                uint8_t *checkSumPtr = (uint8_t *)charPtr;
 
                 shortPtr = (unsigned short *)charPtr;
                 shortFunction("Source port", shortPtr, 1, 65535, false, false);
@@ -1510,57 +1974,76 @@ void addInsert(uint32_t *nrOfPackets)
 
                 intPtr += 1;
                 charPtr = (u_char *)intPtr;
-                unsigned short tcpHeaderLength = -1;
-                bool correctTcpHeaderLength = false;
-                while (correctTcpHeaderLength == false)
-                {
-                    bool isANumber = true;
-                    char check[4];
-                    printf("IHL size (5 - 15): ");
-                    fgets(check, 4, stdin);
-                    for (int i = 0; i < 4; i++)
-                    {
-                        if (check[i] == '\n')
-                        {
-                            check[i] = '\0';
-                        }
-                    }
-                    for (int i = 0; i < strlen(check) && isANumber == true; i++)
-                    {
-                        if (!(isdigit(check[i])))
-                        {
-                            isANumber = false;
-                        }
-                    }
-                    if (isANumber == true)
-                    {
-                        tcpHeaderLength = atoi(check);
-
-                        if (tcpHeaderLength >= 5 && tcpHeaderLength <= 15)
-                        {
-                            correctTcpHeaderLength = true;
-                        }
-                    }
-                    if (!correctTcpHeaderLength || !isANumber)
-                    {
-                        printf("Incorrect input, please try again.\n");
-                    }
-                }
+                unsigned short tcpHeaderLength = 5;
                 u_char *temp = (u_char *)&tcpHeaderLength;
                 *temp = *temp << 4;
                 *charPtr = *temp;
+                printf("TCP Header length set to 20 - options not included in this assignment.\n");
 
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
-                shortFunction("TCP Flag", shortPtr, 0, 63, true, false);
+                short flag = shortFunction("TCP Flag (1 - Don't fragment, 0 - fragment)", NULL, 0, 1, false, true);
+                if (flag == 1)
+                {
+                    *shortPtr = htons(0b0100000000000000);
+                }
+                else
+                {
+                    *shortPtr = htons(0b0000000000000000);
+                }
 
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
                 shortFunction("Window size value", shortPtr, 1, 65535, false, false);
 
                 shortPtr += 1;
-                ///////////////////////////////////////////////
-                //printf("TCP Header checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+                *shortPtr = 0;
+
+                shortPtr += 1;
+                *shortPtr = htons(0);
+                printf("Urgent pointer set to 0.\n");
+
+                unsigned int payloadSize = totLen - 14 - 20 - 20;
+                shortPtr += 1;
+                charPtr = (u_char *)shortPtr;
+                for (int i = 0; i < payloadSize; i++) //Padding payload with 0:s.
+                {
+                    *charPtr = 0;
+                    charPtr++;
+                }
+
+                shortPtr -= 2;
+
+                uint8_t *pseudoPacket = (uint8_t *)malloc(20 + payloadSize + 12);
+                checkSumIntPtr--;
+
+                unsigned int *pseudoPacketInt = (unsigned int *)pseudoPacket;
+                *pseudoPacketInt = *checkSumIntPtr;
+                pseudoPacketInt += 1;
+                checkSumIntPtr += 1;
+                *pseudoPacketInt = *checkSumIntPtr;
+                pseudoPacketInt += 1;
+                pseudoPacket = (uint8_t *)pseudoPacketInt;
+                *pseudoPacket = 0;
+                pseudoPacket += 1;
+                *pseudoPacket = 0b00000110;
+                pseudoPacket += 1;
+                unsigned short *pseudoPacketShort = (unsigned short *)pseudoPacket;
+                *pseudoPacketShort = htons(totLen - 14 - 20);
+                pseudoPacketShort += 1;
+                pseudoPacket = (uint8_t *)pseudoPacketShort;
+
+                for (int i = 0; i < 20 + payloadSize; i++)
+                {
+                    *pseudoPacket = *checkSumPtr;
+                    pseudoPacket += 1;
+                    checkSumPtr += 1;
+                }
+                pseudoPacket -= (12 + 20 + payloadSize);
+
+                *shortPtr = checkSum(pseudoPacket, 20 + payloadSize + 12);
+
+                free(pseudoPacket);
                 printf("\nPacket added!");
                 printf("\nPress enter to return to menu.");
                 getchar();
@@ -1569,6 +2052,7 @@ void addInsert(uint32_t *nrOfPackets)
             {
                 printf("\n---ICMP Layer---\n\n");
                 charPtr += 11; //Moving back
+                u_char *checkSumPtr = charPtr;
 
                 shortPtr = (unsigned short *)charPtr;
                 shortFunction("Type", shortPtr, 0, 255, true, false);
@@ -1579,13 +2063,36 @@ void addInsert(uint32_t *nrOfPackets)
 
                 charPtr += 1;
                 shortPtr = (unsigned short *)charPtr;
-                //printf("ICMP checksum 0x%04x left identical; edit does not have to handle changes in packet size.", ntohs(*shortPtr));
+                *shortPtr = 0;
 
                 shortPtr += 1;
                 shortFunction("ID", shortPtr, 0, 65535, false, false);
 
                 shortPtr += 1;
                 shortFunction("Sequence number", shortPtr, 0, 65535, false, false);
+
+                shortPtr += 1;
+                uint32_t capacity = 6;
+                char fileName[capacity];
+                printf("Enter first 4 letters/bytes for payload: ");
+                fgets(fileName, capacity, stdin);
+                fileName[4] = '\0';
+                charPtr = (u_char *)shortPtr;
+                for (int i = 0; i < 4; i++)
+                {
+                    *charPtr = fileName[i];
+                    charPtr += 1;
+                }
+                charPtr += 1;
+                unsigned int payLoadSize = totLen - 14 - 20 - 8 - 4;
+                for (int i = 0; i < payLoadSize; i++)
+                {
+                    *charPtr = 0;
+                    charPtr += 1;
+                }
+
+                shortPtr -= 3;
+                *shortPtr = checkSum(checkSumPtr, 8 + payLoadSize + 4);
 
                 printf("\nPacket has been added.");
                 if (choice == 2)
@@ -1774,4 +2281,33 @@ bool userWantsToEdit(char *fieldtoEdit)
     {
         return false;
     }
+}
+
+uint16_t checkSum(void *vData, size_t length)
+{
+    char *data = (char *)vData;
+    uint32_t acc = 0xffff;
+
+    for (size_t i = 0; i + 1 < length; i += 2)
+    {
+        uint16_t word;
+        memcpy(&word, data + i, 2);
+        acc += ntohs(word);
+        if (acc > 0xffff)
+        {
+            acc -= 0xffff;
+        }
+    }
+
+    if (length & 1)
+    {
+        uint16_t word = 0;
+        memcpy(&word, data + length - 1, 1);
+        acc += ntohs(word);
+        if (acc > 0xffff)
+        {
+            acc -= 0xffff;
+        }
+    }
+    return htons(~acc);
 }
