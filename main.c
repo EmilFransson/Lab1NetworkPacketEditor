@@ -28,6 +28,7 @@ void view(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *he
 void edit(uint32_t *nrOfPackets);
 void addInsert(uint32_t *nrOfPackets, int *testing);
 void saveToFile(uint32_t *nrOfPackets, pcap_t *pcap, int *testing);
+void help();
 short shortFunction(char *fieldToEdit, unsigned short *shortPtr, unsigned int lowerLimit, unsigned int upperLimit, bool convertToChar, bool onlyReturn);
 int intFunction(char *fieldToEdit, unsigned int *shortPtr, unsigned long lowerLimit, unsigned long upperLimit, bool onlyReturn);
 bool userWantsToEdit(char *fieldtoEdit);
@@ -83,9 +84,9 @@ int main(int argc, char *argv[])
             saveToFile(&nrOfPackets, pcap, &testing);
             break;
 
-            //case 8:
-            //    help();
-            //    break;
+            case 8:
+                help();
+                break;
 
         case 9:
             printf("Exiting program...\n");
@@ -116,7 +117,7 @@ int menu(int testing)
     if (testing < 0)
     {
         printf("1. Read filename into memory.\n\n2. Show number of packets present.\n\n3. List range of packets.\n\n4. View packet.\n\n5. Edit packet.\n\n6. Add/Insert packet.\n\n7. Write to file.\n\n8. Help.\n\n9. Quit program.\n\n");
-        printf("Please enter your choice: ");
+        printf("Please enter your numbered choice (1 - 9): ");
         scanf("%i", &choice);
         getchar();
     }
@@ -220,6 +221,7 @@ uint32_t showNumberOfPackets(pcap_t *pcap, long *pos, struct pcap_pkthdr *header
             ++nrOfPackets;
         }
         printf("Number of packets present in pcap-file: %i", nrOfPackets);
+        printf("\nPress enter to return to main menu.");
         getchar();
         return nrOfPackets;
     }
@@ -2127,6 +2129,42 @@ void addInsert(uint32_t *nrOfPackets, int *testing)
         fprintf(stderr, "Error; no file loaded into memory.");
         getchar();
     }
+}
+
+void help()
+{
+    printf("---Help section---");
+    printf("\n\n");
+    printf("Every menu option is well explained, both in terms of what they do as well as eventual error messages you might encounter.");
+    printf("\n");
+    printf("Every function details how your input should look like and handles both out-of-bounds errors as well as any characters/symbols that shouldn't be used.");
+    printf("\n\n");
+    printf("1. Read filename into memory: Make sure to spell the file ending '.pcap' correctly.");
+    printf("\n\n");
+    printf("2. Show number of packets present: A simple function that tells how many packets are loaded into memory.");
+    printf("\n\n");
+    printf("3. List range of packets: Given a correct interval detailed in the function, displays the range of packets and their corresponding information.");
+    printf("\n\n");
+    printf("4. View packet: Lists all packets and their corresponding information.");
+    printf("\n\n");
+    printf("5. Edit packet: Edits an existing packet. Note that it's the users' responsibility to make sure that the inputs are logical. Some error-checking is of course made, ");
+    printf("however a user might for instance freely edit a checksum, or change the length of a protocol.\nThis might or might not invalidate the packets information.");
+    printf("\n");
+    printf("For a more rigorous approach to forming a correct packet, see Add/insert.");
+    printf("\n\n");
+    printf("6. Add/Insert packet: Creates a new packet, and takes into account what the user inputs in order to calculate correct checksums, payloads and so on. ");
+    printf("Note that it's still possible to input information that might not make any sense in the networking world."); 
+    printf("\n");
+    printf("Wireshark wont say it's an error but will 'warn' for it.");
+    printf("\n\n");
+    printf("7. Write to file: Given a correct file ending (.pcap), will save the packets, including any new ones, in a new pcap-file.");
+    printf("\n\n");
+    printf("8. Help: This is where you are now - you made it.");
+    printf("\n\n");
+    printf("9. Quit program: Frees up memory and exits the program.");
+    printf("\n\n");
+    printf("Press enter to return to main menu.");
+    getchar();
 }
 
 short shortFunction(char *fieldToEdit, unsigned short *shortPtr, unsigned int lowerLimit, unsigned int upperLimit, bool convertToChar, bool onlyReturn)
