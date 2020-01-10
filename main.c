@@ -84,9 +84,9 @@ int main(int argc, char *argv[])
             saveToFile(&nrOfPackets, pcap, &testing);
             break;
 
-            case 8:
-                help();
-                break;
+        case 8:
+            help();
+            break;
 
         case 9:
             printf("Exiting program...\n");
@@ -256,7 +256,7 @@ void listPackages(pcap_t *pcap, uint32_t *nrOfPackets)
                 printf("Packet %d:", i + 1);
                 printf("\nCapture Length: %d", (int)packets[i].header->caplen);
                 printf("\nLength: %d", packets[i].header->len);
-                printf("\nCapture time: %f micro-seconds", (float)packets[i].header->ts.tv_usec);
+                printf("\nCapture time/Epoch time: %ld.%06ld seconds", packets[i].header->ts.tv_sec, packets[i].header->ts.tv_usec);
 
                 u_char *charPtr = (u_char *)packets[i].packet;
 
@@ -407,12 +407,17 @@ void view(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *he
 {
     if (pcap != NULL)
     {
-        for (int i = 0; i < *nrOfPackets; i++)
+        int i = -1;
+        printf("There are %d number of packets stored in memory.\nPlease input the packet you would like to view: ", *nrOfPackets);
+        scanf("%d", &i);
+        getchar();
+        i--;
+        if (i >= 0 && i <= *nrOfPackets)
         {
             printf("Packet %d:", i + 1);
             printf("\nCapture Length: %d", (int)packets[i].header->caplen);
             printf("\nLength: %d", packets[i].header->len);
-            printf("\nCapture time: %f micro-seconds", (float)packets[i].header->ts.tv_usec);
+            printf("\nCapture time/Epoch time: %ld.%06ld seconds", packets[i].header->ts.tv_sec, packets[i].header->ts.tv_usec);
 
             u_char *charPtr = (u_char *)packets[i].packet;
 
@@ -541,6 +546,10 @@ void view(pcap_t *pcap, long *pos, uint32_t *nrOfPackets, struct pcap_pkthdr *he
             }
             printf("\n\n");
         }
+        else
+        {
+            printf("Input out of bounds.\n"); 
+        }
         printf("Press enter key to continue.");
         getchar();
     }
@@ -573,11 +582,13 @@ void edit(uint32_t *nrOfPackets)
                 bpf_u_int32 totLen = (bpf_u_int32)intFunction("Total length", NULL, 1, 4294967295, true);
                 packets[packetChoice].header->len = totLen;
             }
-            if (userWantsToEdit("Capture time"))
+            if (userWantsToEdit("Capture time/Epoch time"))
             {
-                __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (micro seconds)", NULL, 1, 4294967295, true);
+                
+                __time_t sec = (__time_t)intFunction("Capture time (whole seconds)", NULL, 1, 4294967295, true);
+                packets[packetChoice].header->ts.tv_sec = sec;
+                __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (*NOTE*: microseconds, fraction of a second.\n i.e inputing 1 would yield 0.000001)", NULL, 1, 999999, true);
                 packets[packetChoice].header->ts.tv_usec = microSec;
-                packets[packetChoice].header->ts.tv_sec = (microSec / 1000000);
             }
 
             u_char *charPtr = (u_char *)packets[packetChoice].packet;
@@ -802,7 +813,7 @@ void edit(uint32_t *nrOfPackets)
                     int previousInex = 0;
                     bool noLetters = true;
                     bool correctIpStructure = true;
-                    printf("IP-Source (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    printf("IP-Source (In the form X.X.X.X where 0 < X < 256 and WITH dots): ");
                     fgets(ipSource, 17, stdin);
                     for (int i = 0; i < strlen(ipSource) && noLetters == true; i++)
                     {
@@ -900,7 +911,7 @@ void edit(uint32_t *nrOfPackets)
                     int nrOfDots = 0;
                     bool noLetters = true;
                     bool correctIpStructure = true;
-                    printf("IP-Destination (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    printf("IP-Destination (In the form X.X.X.X where 0 < X < 256 and WITH dots): ");
                     fgets(ipDest, 17, stdin);
                     for (int i = 0; i < strlen(ipDest) && noLetters == true; i++)
                     {
@@ -1349,14 +1360,15 @@ void addInsert(uint32_t *nrOfPackets, int *testing)
 
             if (*testing < 0)
             {
-                __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (micro seconds)", NULL, 1, 4294967295, true);
+                __time_t sec = (__time_t)intFunction("Capture time (whole seconds)", NULL, 1, 4294967295, true);
+                packets[*nrOfPackets - 1].header->ts.tv_sec = sec;
+                __suseconds_t microSec = (__suseconds_t)intFunction("Capture time (*NOTE*: microseconds, fraction of a second.\n i.e inputing 1 would yield 0.000001)", NULL, 1, 999999, true);
                 packets[*nrOfPackets - 1].header->ts.tv_usec = microSec;
-                packets[*nrOfPackets - 1].header->ts.tv_sec = (microSec / 1000000);
             }
             else
             {
                 packets[*nrOfPackets - 1].header->ts.tv_usec = 100;
-                packets[*nrOfPackets - 1].header->ts.tv_sec = (100 / 1000000);
+                packets[*nrOfPackets - 1].header->ts.tv_sec = 25;
             }
 
             packets[*nrOfPackets - 1].packet = (uint8_t *)malloc(totLen);
@@ -1661,7 +1673,7 @@ void addInsert(uint32_t *nrOfPackets, int *testing)
                 bool correctIpStructure = true;
                 if (*testing < 0)
                 {
-                    printf("IP-Source (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    printf("IP-Source (In the form X.X.X.X where 0 < X < 256 and WITH dots): ");
                     fgets(ipSource, 17, stdin);
                 }
                 else
@@ -1768,7 +1780,7 @@ void addInsert(uint32_t *nrOfPackets, int *testing)
                 bool correctIpStructure = true;
                 if (*testing < 0)
                 {
-                    printf("IP-Destination (In the form X.X.X.X where 0 < X < 1000 and WITH dots): ");
+                    printf("IP-Destination (In the form X.X.X.X where 0 < X < 256 and WITH dots): ");
                     fgets(ipDest, 17, stdin);
                 }
                 else
@@ -2145,7 +2157,7 @@ void help()
     printf("\n\n");
     printf("3. List range of packets: Given a correct interval detailed in the function, displays the range of packets and their corresponding information.");
     printf("\n\n");
-    printf("4. View packet: Lists all packets and their corresponding information.");
+    printf("4. View packet: Lists chosen packet and its corresponding information.");
     printf("\n\n");
     printf("5. Edit packet: Edits an existing packet. Note that it's the users' responsibility to make sure that the inputs are logical. Some error-checking is of course made, ");
     printf("however a user might for instance freely edit a checksum, or change the length of a protocol.\nThis might or might not invalidate the packets information.");
@@ -2153,7 +2165,7 @@ void help()
     printf("For a more rigorous approach to forming a correct packet, see Add/insert.");
     printf("\n\n");
     printf("6. Add/Insert packet: Creates a new packet, and takes into account what the user inputs in order to calculate correct checksums, payloads and so on. ");
-    printf("Note that it's still possible to input information that might not make any sense in the networking world."); 
+    printf("Note that it's still possible to input information that might not make any sense in the networking world.");
     printf("\n");
     printf("Wireshark wont say it's an error but will 'warn' for it.");
     printf("\n\n");
@@ -2227,7 +2239,7 @@ short shortFunction(char *fieldToEdit, unsigned short *shortPtr, unsigned int lo
 int intFunction(char *fieldToEdit, unsigned int *intPtr, unsigned long lowerLimit, unsigned long upperLimit, bool onlyReturn)
 {
     bool correctValue = false;
-    unsigned int value = -1;
+    unsigned long int value = -1;
 
     while (correctValue == false)
     {
